@@ -33,6 +33,10 @@ jobs:
           set -euo pipefail
           if [ -z "$SOURCE_TOKEN" ]; then echo "::warning::no SOURCE_TOKEN secret: can't read $SOURCE"; exit 0; fi
           HERE=${{ github.repository }}
+          if ! GH_TOKEN="$SOURCE_TOKEN" gh api "repos/$SOURCE" -q .full_name > /dev/null; then
+            echo "::error::SOURCE_TOKEN can't read $SOURCE: it needs to be a classic token with the 'repo' scope, from an account that is a collaborator there"
+            exit 1
+          fi
           have=$(gh release list -R "$HERE" --limit 200 --json tagName -q '.[].tagName')
           # Seb's packs from the last few days, oldest first, that aren't here yet
           for tag in $(GH_TOKEN="$SOURCE_TOKEN" gh release list -R "$SOURCE" --limit 10 --json tagName,publishedAt,isDraft \
