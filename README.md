@@ -21,3 +21,11 @@ anywhere but Microsoft, Xbox Live and Minecraft's own services.
 ## Downloads
 
 The launcher and the packs are under [Releases](../../releases).
+
+
+## Updates
+
+New packs and launcher versions reach everyone at **6:00 AM New York time**, so a push in the middle of the day never
+changes anyone's game or restarts the server mid-session. To send the newest pack out straight away, run the
+**Release now** workflow (Actions tab > Release now > Run workflow). Launchers take it the next time they're
+opened, and the server updater warns players and restarts onto it within about 15 minutes.

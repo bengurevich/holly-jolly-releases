@@ -1,0 +1,40 @@
+# "Release now": the newest pack (or the one named) goes out straight away instead of at 6:00 AM New York time.
+# Launchers take it the next time they are opened; the server updater sees it within 10 minutes, warns everyone in
+# chat (5 minutes, then 1 minute) and restarts onto it. It works by adding the hidden marker <!-- hollyjolly:now -->
+# to the release's notes (hjlauncher/schedule.py, NOW). Run it from the Actions tab ("Release now" > Run workflow), or:
+#   gh workflow run release-now.yml -R bengurevich/holly-jolly-releases [-f tag=pack-2026-11-24]
+name: Release now
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The pack release to send out now (empty: the newest pack)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  now:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Mark it to go out now
+        run: |
+          set -euo pipefail
+          R=${{ github.repository }}
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list -R "$R" --limit 50 --json tagName,publishedAt \
+              -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.publishedAt) | last | .tagName')
+          fi
+          [ -n "$TAG" ] || { echo "::error::no pack release found"; exit 1; }
+          gh release view "$TAG" -R "$R" --json body -q .body > notes.md
+          if grep -q "hollyjolly:now" notes.md; then echo "$TAG already goes out now"; exit 0; fi
+          printf '\n\n<!-- hollyjolly:now -->\n' >> notes.md
+          gh release edit "$TAG" -R "$R" --notes-file notes.md
+          echo "### $TAG goes out now" >> "$GITHUB_STEP_SUMMARY"
+          echo "Launchers take it when next opened; the server updates within about 15 minutes, after warning players." >> "$GITHUB_STEP_SUMMARY"
