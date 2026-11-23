@@ -1,0 +1,53 @@
+# Copies every new pack release from sebscrim/holly-jolly-craft (private) here, where the Holly Jolly launcher looks,
+# every 15 minutes, so new packs arrive without anyone copying them (Ben: "i want the launcher to do it
+# automatically"). Launchers and the server updater then take a pack at the next 6:00 AM New York time (or straight
+# away after "Release now"). Seb's own release workflow copies packs here too, once it has that step; whichever runs
+# first copies it and the other sees it is already here.
+#
+# SOURCE_TOKEN: a GitHub token that can read sebscrim/holly-jolly-craft's releases (a classic token with the "repo"
+# scope, from an account that is a collaborator there). Without it this is skipped with a warning.
+name: Sync packs
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-packs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE: sebscrim/holly-jolly-craft
+      SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Copy new packs
+        run: |
+          set -euo pipefail
+          if [ -z "$SOURCE_TOKEN" ]; then echo "::warning::no SOURCE_TOKEN secret: can't read $SOURCE"; exit 0; fi
+          HERE=${{ github.repository }}
+          have=$(gh release list -R "$HERE" --limit 200 --json tagName -q '.[].tagName')
+          # Seb's packs from the last few days, oldest first, that aren't here yet
+          for tag in $(GH_TOKEN="$SOURCE_TOKEN" gh release list -R "$SOURCE" --limit 10 --json tagName,publishedAt,isDraft \
+              -q 'map(select((.tagName | startswith("pack-")) and (.isDraft | not))) | sort_by(.publishedAt) | .[-3:] | .[].tagName'); do
+            if grep -qx "$tag" <<< "$have"; then continue; fi
+            echo "copying $tag"
+            dir=$(mktemp -d)
+            GH_TOKEN="$SOURCE_TOKEN" gh release download "$tag" -R "$SOURCE" -D "$dir" -p "holly-jolly-craft-*-$tag.zip"
+            GH_TOKEN="$SOURCE_TOKEN" gh release view "$tag" -R "$SOURCE" --json body -q .body > "$dir/notes.md"
+            title=$(GH_TOKEN="$SOURCE_TOKEN" gh release view "$tag" -R "$SOURCE" --json name -q .name)
+            gh release create "$tag" -R "$HERE" --title "$title" --notes-file "$dir/notes.md" "$dir"/holly-jolly-craft-*.zip
+            rm -rf "$dir"
+            echo "- copied $tag" >> "$GITHUB_STEP_SUMMARY"
+          done
+          # the 10 newest packs kept here
+          gh release list -R "$HERE" --limit 200 --json tagName,createdAt \
+            -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' |
+            xargs -r -n1 gh release delete -R "$HERE" --yes
