@@ -37,11 +37,18 @@ jobs:
             echo "::error::SOURCE_TOKEN can't read $SOURCE: it needs to be a classic token with the 'repo' scope, from an account that is a collaborator there"
             exit 1
           fi
-          have=$(gh release list -R "$HERE" --limit 200 --json tagName -q '.[].tagName')
-          # Seb's packs from the last few days, oldest first, that aren't here yet
-          for tag in $(GH_TOKEN="$SOURCE_TOKEN" gh release list -R "$SOURCE" --limit 10 --json tagName,publishedAt,isDraft \
-              -q 'map(select((.tagName | startswith("pack-")) and (.isDraft | not))) | sort_by(.publishedAt) | .[-3:] | .[].tagName'); do
-            if grep -qx "$tag" <<< "$have"; then continue; fi
+          # Packs are ordered by their tag (pack-<date>, then -2, -3 ...), never by when they were published: a pack
+          # copied here again is published later and outranked a newer one (2026-11-25).
+          KEY='def key: capture("^pack-(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})(-(?<n>[0-9]+))?$") | [.d, ((.n // "1") | tonumber)];
+               def packs: map(.tagName | select(test("^pack-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$")));'
+          here=$(gh release list -R "$HERE" --limit 200 --json tagName)
+          newest=$(jq -c "$KEY"' packs | map(key) | max // []' <<< "$here")      # ([] = none yet: before every pack)
+          echo "newest pack here: $newest"
+          # Seb's newest packs (up to 3, oldest first) that are newer than every pack here. Only newer: a pack deleted
+          # here (the 10-pack limit below, or by hand) is never brought back.
+          source=$(GH_TOKEN="$SOURCE_TOKEN" gh release list -R "$SOURCE" --limit 10 --json tagName,isDraft)
+          for tag in $(jq -r --argjson newest "$newest" "$KEY"' map(select(.isDraft | not)) | packs
+                         | map(select(key > $newest)) | sort_by(key) | .[-3:] | .[]' <<< "$source"); do
             echo "copying $tag"
             dir=$(mktemp -d)
             GH_TOKEN="$SOURCE_TOKEN" gh release download "$tag" -R "$SOURCE" -D "$dir" -p "holly-jolly-craft-*-$tag.zip"
@@ -51,9 +58,7 @@ jobs:
             rm -rf "$dir"
             echo "- copied $tag" >> "$GITHUB_STEP_SUMMARY"
           done
-          # the 10 newest packs kept here, by publish time (a release's createdAt is its tagged commit's date, the
-          # same for every pack here, so sorting by it deleted an arbitrary pack: pack-2026-11-24-9, the one the
-          # server was on, on 2026-11-25)
-          gh release list -R "$HERE" --limit 200 --json tagName,publishedAt \
-            -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.publishedAt) | reverse | .[10:] | .[].tagName' |
+          # the 10 newest packs kept here (by tag)
+          gh release list -R "$HERE" --limit 200 --json tagName |
+            jq -r "$KEY"' packs | sort_by(key) | reverse | .[10:] | .[]' |
             xargs -r -n1 gh release delete -R "$HERE" --yes

@@ -28,8 +28,10 @@ jobs:
           set -euo pipefail
           R=${{ github.repository }}
           if [ -z "$TAG" ]; then
-            TAG=$(gh release list -R "$R" --limit 50 --json tagName,publishedAt \
-              -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.publishedAt) | last | .tagName')
+            # the newest by tag (pack-<date>, then -2, -3 ...), not by publish time, which a pack copied again changes
+            TAG=$(gh release list -R "$R" --limit 50 --json tagName,isPrerelease |
+              jq -r 'map(select(.isPrerelease | not) | .tagName | select(test("^pack-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]+)?$")))
+                     | max_by(capture("^pack-(?<d>[^-]+-[^-]+-[^-]+)(-(?<n>[0-9]+))?$") | [.d, ((.n // "1") | tonumber)]) // empty')
           fi
           [ -n "$TAG" ] || { echo "::error::no pack release found"; exit 1; }
           gh release view "$TAG" -R "$R" --json body -q .body > notes.md
