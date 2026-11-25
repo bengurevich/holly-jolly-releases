@@ -51,7 +51,9 @@ jobs:
             rm -rf "$dir"
             echo "- copied $tag" >> "$GITHUB_STEP_SUMMARY"
           done
-          # the 10 newest packs kept here
-          gh release list -R "$HERE" --limit 200 --json tagName,createdAt \
-            -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.createdAt) | reverse | .[10:] | .[].tagName' |
+          # the 10 newest packs kept here, by publish time (a release's createdAt is its tagged commit's date, the
+          # same for every pack here, so sorting by it deleted an arbitrary pack: pack-2026-11-24-9, the one the
+          # server was on, on 2026-11-25)
+          gh release list -R "$HERE" --limit 200 --json tagName,publishedAt \
+            -q 'map(select(.tagName | startswith("pack-"))) | sort_by(.publishedAt) | reverse | .[10:] | .[].tagName' |
             xargs -r -n1 gh release delete -R "$HERE" --yes
